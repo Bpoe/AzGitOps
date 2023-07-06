@@ -1,0 +1,101 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "TargetResourceName": {
+      "type": "string"
+    },
+    "TargetResourceType": {
+      "type": "string",
+      "allowedValues": [
+        "Microsoft.Compute/virtualMachines",
+        "Microsoft.HybridCompute/machines"
+      ]
+    },
+    "osType": {
+      "type": "string",
+      "allowedValues": [
+        "Windows",
+        "Linux"
+      ]
+    },
+    "AzureSecurityBaseline/Enable": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "BootDiagnostics/Enable": {
+      "type": "bool",
+      "defaultValue": false
+    },
+    "managedDisksInUse": {
+      "type": "bool",
+      "defaultValue": false
+    }
+  },
+  "variables": {
+    "policyDefinitionId": "/providers/Microsoft.Authorization/policySetDefinitions/c138fd1a-e08f-4318-9490-d11ef2c2f9c1"
+  },
+  "resources": [
+    {
+      "condition": "[equals(parameters('TargetResourceType'), 'Microsoft.Compute/virtualMachines')]",
+      "type": "Microsoft.Compute/virtualMachines/providers/policyAssignments",
+      "name": "[concat(parameters('TargetResourceName'), '/Microsoft.Authorization/AutomanageBestPractices')]",
+      "apiVersion": "2022-06-01",
+      "properties": {
+        "displayName": "Audit configuration against Automanage Best Practices",
+        "policyDefinitionId": "[variables('policyDefinitionId')]",
+        "scope": "[resourceId(subscription().subscriptionId, resourceGroup().Name, parameters('TargetResourceType'), parameters('TargetResourceName'))]",
+        "parameters": {
+          "linuxAzureSecurityBaselineEffect": {
+            "value": "[if(and(parameters('AzureSecurityBaseline/Enable'), equals(parameters('osType'), 'Linux')), 'AuditIfNotExists', 'Disabled')]"
+          },
+          "windowsAzureSecurityBaselineEffect": {
+            "value": "[if(and(parameters('AzureSecurityBaseline/Enable'), equals(parameters('osType'), 'Windows')), 'AuditIfNotExists', 'Disabled')]"
+          },
+          "identityEffect": {
+            "value": "[if(parameters('AzureSecurityBaseline/Enable'), 'Audit', 'Disabled')]"
+          },
+          "machineConfigurationExtensionEffect": {
+            "value": "[if(parameters('AzureSecurityBaseline/Enable'), 'AuditIfNotExists', 'Disabled')]"
+          },
+          "bootDiagnosticsEffect": {
+            "value": "[if(and(parameters('BootDiagnostics/Enable'), parameters('managedDisksInUse')), 'Audit', 'Disabled')]"
+          }
+        },
+        "enforcementMode": "Default",
+        "nonComplianceMessages": [],
+        "resourceSelectors": [],
+        "overrides": []
+      }
+    },
+    {
+      "condition": "[equals(parameters('TargetResourceType'), 'Microsoft.HybridCompute/machines')]",
+      "type": "Microsoft.HybridCompute/machines/providers/policyAssignments",
+      "name": "[concat(parameters('TargetResourceName'), '/Microsoft.Authorization/AutomanageBestPractices')]",
+      "apiVersion": "2022-06-01",
+      "properties": {
+        "displayName": "Audit configuration against Automanage Best Practices",
+        "policyDefinitionId": "[variables('policyDefinitionId')]",
+        "scope": "[resourceId(subscription().subscriptionId, resourceGroup().Name, parameters('TargetResourceType'), parameters('TargetResourceName'))]",
+        "parameters": {
+          "linuxAzureSecurityBaselineEffect": {
+            "value": "[if(and(parameters('AzureSecurityBaseline/Enable'), equals(parameters('osType'), 'Linux')), 'AuditIfNotExists', 'Disabled')]"
+          },
+          "windowsAzureSecurityBaselineEffect": {
+            "value": "[if(and(parameters('AzureSecurityBaseline/Enable'), equals(parameters('osType'), 'Windows')), 'AuditIfNotExists', 'Disabled')]"
+          },
+          "identityEffect": {
+            "value": "[if(parameters('AzureSecurityBaseline/Enable'), 'Audit', 'Disabled')]"
+          },
+          "bootDiagnosticsEffect": {
+            "value": "Disabled"
+          }
+        },
+        "enforcementMode": "Default",
+        "nonComplianceMessages": [],
+        "resourceSelectors": [],
+        "overrides": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "bpoe-malware-test-am_policy",
+  "properties": {
+    "parametersPath": "AM_Policy.parameters.json",
+    "templatePath": "AM_Policy.template.json",
+    "scope": "/subscriptions/93340456-779d-47ac-8a34-96234e17d9a5/resourceGroups/cleanupservice",
+    "syncInterval": "PT10M"
+  }
+}
