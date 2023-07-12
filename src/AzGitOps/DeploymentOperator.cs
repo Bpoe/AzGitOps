@@ -79,7 +79,11 @@ public class DeploymentOperator
         // Set
         var deploymentResult = await this.Set(client, desiredState, template.ToString(), parameters.ToString());
 
-        // TODO: Update status of resource
+        desiredState.Properties.Status.Status = string.Equals("Succeeded", deploymentResult.Properties.ProvisioningState, StringComparison.InvariantCultureIgnoreCase)
+            ? "CompliantCorrected"
+            : "NoncompliantCorrectionFailed";
+
+        await armClient.PutAsync(desiredStateResourceId, "2022-05-04", JsonConvert.SerializeObject(desiredState));
     }
 
     private async Task<IEnumerable<WhatIfChange>> Test(IResourceManagementClient client, DesiredStateResource desiredState, string template, string parameters)

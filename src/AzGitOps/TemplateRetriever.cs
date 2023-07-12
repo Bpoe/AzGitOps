@@ -1,19 +1,24 @@
 ﻿namespace Microsoft.Azure.GitOps;
 
+using global::Azure.Core;
+using global::Azure.Storage.Blobs;
 using Newtonsoft.Json.Linq;
 
 public class TemplateRetriever
 {
+    private readonly TokenCredential tokenCredential;
+
+    public TemplateRetriever(TokenCredential tokenCredential)
+    {
+        this.tokenCredential = tokenCredential ?? throw new ArgumentNullException(nameof(tokenCredential));
+    }
+
     public async Task<JObject?> GetTemplate(string template)
     {
-        using var stream = File.OpenRead("templates/" + template);
-        if (stream == null)
-        {
-            return null;
-        }
+        var blobUri = new Uri(template);
+        var blobClient = new BlobClient(blobUri, this.tokenCredential);
 
-        using var reader = new StreamReader(stream);
-        var content = await reader.ReadToEndAsync();
-        return JObject.Parse(content);
+        var content = await blobClient.DownloadContentAsync();
+        return JObject.Parse(content.Value.Content.ToString());
     }
 }

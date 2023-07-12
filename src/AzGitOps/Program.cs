@@ -17,7 +17,7 @@ Host
 static void ConfigureServices(HostBuilderContext hostBuilderContext, IServiceCollection services)
 {
     services
-        .AddSingleton(new DefaultAzureCredentialOptions { ExcludeAzureCliCredential = true, ExcludeManagedIdentityCredential = true, })
+        .AddSingleton(hostBuilderContext.Configuration.Get<DefaultAzureCredentialOptions>() ?? new DefaultAzureCredentialOptions())
         .AddSingleton<TokenCredential, DefaultAzureCredential>(p =>
         {
             var o = p.GetRequiredService<DefaultAzureCredentialOptions>();
