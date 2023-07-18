@@ -1,9 +1,22 @@
 {
   "name": "bpoe-malware-test-am_policy",
+  "type":  "Microsoft.Automanage/desiredStates",
   "properties": {
+    // ARM configMap resource, blob URL or path to source code
     "parametersPath": "AM_Policy.parameters.json",
+
+    // ARM TemplateSpec, blob URL or path to source code
     "templatePath": "AM_Policy.template.json",
+
     "scope": "/subscriptions/93340456-779d-47ac-8a34-96234e17d9a5/resourceGroups/cleanupservice",
-    "syncInterval": "PT10M"
+
+    "syncInterval": "PT10M",
+
+    "source": "null | blob URL prefix | source sync ARM resource",
+
+    "mode": "ApplyAndAutocorrect | ApplyAndAudit | AuditOnly",
+
+    // Another desiredState resource that needs to be compliant before this one executes a sync
+    "dependsOn": "..."
   }
 }
