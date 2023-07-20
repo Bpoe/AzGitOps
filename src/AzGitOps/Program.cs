@@ -23,16 +23,15 @@ static void ConfigureServices(HostBuilderContext hostBuilderContext, IServiceCol
             var o = p.GetRequiredService<DefaultAzureCredentialOptions>();
             return new DefaultAzureCredential(o);
         })
+        .AddSingleton(hostBuilderContext.Configuration.Get<OperatorOptions>() ?? new OperatorOptions())
         .AddSingleton<DeploymentOperator>()
         .AddSingleton<TemplateRetriever>()
         .AddSingleton<ArmResourceClientFactory>();
 
-    if (!hostBuilderContext.HostingEnvironment.IsDevelopment())
+
+    services.AddHttpClient("ResourceProvider", (s, h) =>
     {
-        services.AddHttpClient("ResourceProvider", h => h.BaseAddress = new Uri("https://management.azure.com"));
-    }
-    else
-    {
-        services.AddHttpClient("ResourceProvider", h => h.BaseAddress = new Uri("http://localhost:5000"));
-    }
+        var o = s.GetRequiredService<OperatorOptions>();
+        h.BaseAddress = o.ResourceProviderEndpoint;
+    });
 }
