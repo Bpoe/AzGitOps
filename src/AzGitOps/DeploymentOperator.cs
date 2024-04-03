@@ -1,5 +1,6 @@
 ﻿namespace Microsoft.Azure.GitOps;
 
+using AzGitOps.Models;
 using global::Azure.Core;
 using Newtonsoft.Json;
 using WhatIf.Model;
@@ -24,8 +25,14 @@ public class DeploymentOperator
     {
         this.logger?.LogInformation("Checking compliance for {source}...", desiredStateResourceId);
 
-        // Arrange
+        var resource = new ResourceIdentifier(desiredStateResourceId);
         var armClient = this.armResourceClientFactory.GetArmResourceClient<DeploymentOperator>(this.tokenCredential);
+
+        // Get desired state object
+        var desiredStateContent = await File.ReadAllTextAsync("deploymentWhatIfRequest.json");
+        var desiredState = JsonConvert.DeserializeObject<DesiredStateResource>(desiredStateContent);
+        desiredState.Name = resource.Name;
+        desiredState.Properties.Scope = $"/subscriptions/{resource.SubscriptionId}/resourceGroups/{resource.ResourceGroupName}";
 
         //var rawResource = await armClient.GetAsync(desiredStateResourceId, "2022-05-04", true);
         //if (rawResource is null)
@@ -42,12 +49,8 @@ public class DeploymentOperator
 
         //await armClient.PutAsync(desiredStateResourceId, "2022-05-04", JsonConvert.SerializeObject(desiredState));
 
-        var scope = "/subscriptions/d0efb362-cb15-4021-9b3b-8c107b937d4c/resourceGroups/cleanupservice";
-        // "0fff0b88-539a-4eda-86e4-d507bfdd8928";
-        var deploymentName = Guid.NewGuid().ToString();
-
         // Test
-        var changesNeeded = await this.Test(armClient, scope, deploymentName);
+        var changesNeeded = await this.Test(armClient, desiredState);
         var compliant = !changesNeeded.Any();
         var complianceState = compliant ? "Compliant" : "Noncompliant";
         this.logger?.LogInformation("Compliance State: {complianceState}", complianceState);
@@ -77,14 +80,27 @@ public class DeploymentOperator
         //await armClient.PutAsync(desiredStateResourceId, "2022-05-04", JsonConvert.SerializeObject(desiredState));
     }
 
-    private async Task<IEnumerable<WhatIfChange>> Test(ArmResourceClient armClient, string scope, string deploymentName)
+    private async Task<IEnumerable<WhatIfChange>> Test(ArmResourceClient armClient, DesiredStateResource desiredState)
     {
-        var requestContent = await File.ReadAllTextAsync("deploymentWhatIfRequest.json");
-        var request = JsonConvert.DeserializeObject<DeploymentWhatIf>(requestContent);
-
         this.logger?.LogInformation("Starting WhatIf operation...");
+
+        var request = new DeploymentWhatIf
+        {
+            Properties = new DeploymentWhatIfProperties
+            {
+                Template = desiredState.Properties.Template,
+                TemplateLink = desiredState.Properties.TemplateLink,
+                Parameters = desiredState.Properties.Parameters,
+                ParametersLink = desiredState.Properties.ParametersLink,
+                Mode = desiredState.Properties.Mode,
+                ExpressionEvaluationOptions = desiredState.Properties.ExpressionEvaluationOptions,
+                DebugSetting = desiredState.Properties.DebugSetting,
+                OnErrorDeployment = desiredState.Properties.OnErrorDeployment,
+            }
+        };
+
         var responseRaw = await armClient.PostAsync(
-            $"{scope}/providers/Microsoft.Resources/deployments/{deploymentName}/whatIf",
+            $"{desiredState.Properties.Scope}/providers/Microsoft.Resources/deployments/{desiredState.Name}/whatIf",
             "2021-04-01",
             JsonConvert.SerializeObject(request));
 
@@ -98,21 +114,27 @@ public class DeploymentOperator
         return changesNeeded;
     }
 
-    //private async Task<DeploymentExtended> Set(ArmResourceClient client, DesiredStateResource desiredState, string template, string parameters)
-    //{
-    //    var deployment = new Deployment
-    //    {
-    //        Properties = new DeploymentProperties
-    //        {
-    //            Template = template.ToString(),
-    //            Parameters = parameters.ToString(),
-    //            Mode = DeploymentMode.Incremental,
-    //        },
-    //    };
-    //    this.logger?.LogInformation("Starting Deployment operation...");
-    //    var deploymentResult = await client.Deployments.CreateOrUpdateAtScopeAsync(desiredState.Properties.Scope, desiredState.Name, deployment);
-    //    this.logger?.LogInformation("Deployment operation completed. Status: {status}", deploymentResult.Properties.ProvisioningState);
+    private async Task Set(ArmResourceClient client, DesiredStateResource desiredState)
+    {
+        var deployment = new Deployment
+        {
+            Properties = new DeploymentProperties
+            {
+                Template = desiredState.Properties.Template,
+                TemplateLink = desiredState.Properties.TemplateLink,
+                Parameters = desiredState.Properties.Parameters,
+                ParametersLink = desiredState.Properties.ParametersLink,
+                Mode = desiredState.Properties.Mode,
+                ExpressionEvaluationOptions = desiredState.Properties.ExpressionEvaluationOptions,
+                DebugSetting = desiredState.Properties.DebugSetting,
+                OnErrorDeployment = desiredState.Properties.OnErrorDeployment,
+            },
+        };
 
-    //    return deploymentResult;
-    //}
+        this.logger?.LogInformation("Starting Deployment operation...");
+        //var deploymentResult = await client.Deployments.CreateOrUpdateAtScopeAsync(desiredState.Properties.Scope, desiredState.Name, deployment);
+        //this.logger?.LogInformation("Deployment operation completed. Status: {status}", deploymentResult.Properties.ProvisioningState);
+
+        //return deploymentResult;
+    }
 }

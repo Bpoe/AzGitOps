@@ -2,14 +2,11 @@
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
+using WhatIf.Model;
 
 [JsonObject(NamingStrategyType = typeof(CamelCaseNamingStrategy))]
-public class DesiredStateResourceProperties
+public class DesiredStateResourceProperties : DeploymentWhatIfProperties
 {
-    public string ParametersPath { get; set; }
-
-    public string TemplatePath { get; set; }
-
     public string Scope { get; set; }
 
     [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]

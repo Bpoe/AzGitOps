@@ -9,8 +9,10 @@ var host = Host
     .ConfigureServices(ConfigureServices)
     .Build();
 
+var resourceId = $"/subscriptions/d0efb362-cb15-4021-9b3b-8c107b937d4c/resourceGroups/cleanupservice/providers/Microsoft.Foo/bars/{Guid.NewGuid()}";
+// "0fff0b88-539a-4eda-86e4-d507bfdd8928";
 var deploymentOperator = host.Services.GetRequiredService<DeploymentOperator>();
-await deploymentOperator.Reconcile("any");
+await deploymentOperator.Reconcile(resourceId);
 
 //Host
 //    .CreateDefaultBuilder(args)
