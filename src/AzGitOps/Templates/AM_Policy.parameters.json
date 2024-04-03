@@ -15,7 +15,7 @@
       "value": true
     },
     "BootDiagnostics/Enable": {
-      "value": true
+      "value": false
     },
     "managedDisksInUse": {
       "value": true

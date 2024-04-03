@@ -1,35 +1,32 @@
 ﻿namespace Microsoft.Azure.GitOps;
 
-using Microsoft.Extensions.Logging;
-using Microsoft.Rest;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net;
+using global::Azure.Core;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 public class ArmResourceClient
 {
-    private readonly IDictionary<string, JContainer> cache = new ConcurrentDictionary<string, JContainer>(StringComparer.InvariantCultureIgnoreCase);
+    private readonly IDictionary<string, JContainer?> cache = new ConcurrentDictionary<string, JContainer?>(StringComparer.InvariantCultureIgnoreCase);
     private readonly HttpClient httpClient;
-    private readonly ServiceClientCredentials serviceClientCredentials;
+    private readonly IAuthenticationHeaderProvider authenticationHeaderProvider;
     private readonly ILogger<ArmResourceClient> logger;
 
-    public ArmResourceClient(HttpClient httpClient, ServiceClientCredentials serviceClientCredentials, ILogger<ArmResourceClient> logger)
+    public ArmResourceClient(HttpClient httpClient, TokenCredential tokenCredential, AzureEnvironment azureEnvironment, ILogger<ArmResourceClient> logger)
     {
-        ArgumentNullException.ThrowIfNull(httpClient, nameof(httpClient));
-        ArgumentNullException.ThrowIfNull(httpClient.BaseAddress, nameof(httpClient.BaseAddress));
+        ArgumentNullException.ThrowIfNull(tokenCredential, nameof(tokenCredential));
+        ArgumentNullException.ThrowIfNull(azureEnvironment, nameof(azureEnvironment));
 
-        this.httpClient = httpClient;
-        this.serviceClientCredentials = serviceClientCredentials ?? throw new ArgumentNullException(nameof(serviceClientCredentials));
-        this.logger = logger;
+        this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        this.authenticationHeaderProvider = new TokenCredentialAuthenticationHeaderProvider(tokenCredential, azureEnvironment);
     }
 
-    protected ArmResourceClient()
-    {
-    }
-
-    public virtual async Task<JContainer> GetAsync(string resourceId, string apiVersion, bool refreshCache = false, CancellationToken cancellationToken = default)
+    public virtual async Task<JContainer?> GetAsync(string resourceId, string apiVersion, bool refreshCache = false, CancellationToken cancellationToken = default)
     {
         var key = resourceId + "?api-version=" + apiVersion;
         if (!refreshCache && this.cache.TryGetValue(key, out var cacheResource))
@@ -43,10 +40,10 @@ public class ArmResourceClient
         return result;
     }
 
-    public virtual async Task<JContainer> PostAsync(string path, string apiVersion, string body, CancellationToken cancellationToken = default)
+    public virtual async Task<JContainer?> PostAsync(string path, string apiVersion, string body, CancellationToken cancellationToken = default)
         => await this.PostAsync(path, apiVersion, body, null, cancellationToken);
 
-    public virtual async Task<JContainer> PostAsync(string path, string apiVersion, string body, IDictionary<string, string> headers, CancellationToken cancellationToken = default)
+    public virtual async Task<JContainer?> PostAsync(string path, string apiVersion, string body, IDictionary<string, string>? headers, CancellationToken cancellationToken = default)
     {
         using var request = await this.GetRequestMessage(HttpMethod.Post, path, apiVersion, cancellationToken);
         request.Content = new StringContent(body);
@@ -63,7 +60,7 @@ public class ArmResourceClient
         return await this.GetResultForRequest(request, cancellationToken);
     }
 
-    public virtual async Task<JContainer> PutAsync(string path, string apiVersion, string body, CancellationToken cancellationToken = default)
+    public virtual async Task<JContainer?> PutAsync(string path, string apiVersion, string body, CancellationToken cancellationToken = default)
     {
         using var request = await this.GetRequestMessage(HttpMethod.Put, path, apiVersion, cancellationToken);
         request.Content = new StringContent(body);
@@ -72,7 +69,7 @@ public class ArmResourceClient
         return await this.GetResultForRequest(request, cancellationToken);
     }
 
-    public virtual async Task<JContainer> DeleteAsync(string path, string apiVersion, CancellationToken cancellationToken = default)
+    public virtual async Task<JContainer?> DeleteAsync(string path, string apiVersion, CancellationToken cancellationToken = default)
     {
         using var request = await this.GetRequestMessage(HttpMethod.Delete, path, apiVersion, cancellationToken);
         return await this.GetResultForRequest(request, cancellationToken);
@@ -83,29 +80,14 @@ public class ArmResourceClient
         var uri = GetResourceUri(resourceId, apiVersion);
 
         var request = new HttpRequestMessage(httpMethod, uri);
-
-        // <Workaround>
-        //  AzureCredentials.ProcessHttpRequestAsync has an issue where it throws if the Uri is a relative Uri
-        //  (which is what we do). So we will check if its relative and temporarily set a new absolute Uri and
-        //  then swap back the original Uri after the call.
-        //  https://github.com/Azure/azure-libraries-for-net/issues/1257
-        var originalRequestUri = request.RequestUri;
-        if (!originalRequestUri.IsAbsoluteUri)
-        {
-            request.RequestUri = new Uri(this.httpClient.BaseAddress, originalRequestUri);
-        }
-
-        await this.serviceClientCredentials.ProcessHttpRequestAsync(request, cancellationToken);
-
-        request.RequestUri = originalRequestUri;
-        // </Workaround>
+        request.Headers.Authorization = await this.authenticationHeaderProvider.GetAuthenticationHeaderAsync(cancellationToken);
 
         return request;
     }
 
     private async Task<JContainer?> GetResultForRequest(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        var result = await this.httpClient.SendAsync(request, cancellationToken);
+        var result = await SendAndFollowLocation(this.httpClient, request, cancellationToken);
         if (result.StatusCode == HttpStatusCode.NotFound || result.StatusCode == HttpStatusCode.Forbidden)
         {
             this.logger?.LogWarning("The request {requestUri} returned status code: {statusCode}", request.RequestUri, result.StatusCode);
@@ -126,6 +108,24 @@ public class ArmResourceClient
             this.logger?.LogWarning(ex, "The request {requestUri} returned a response that was not parsable JSON: {response}", request.RequestUri, responseBody);
             return null;
         }
+    }
+
+    private static async Task<HttpResponseMessage> SendAndFollowLocation(HttpClient client, HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var response = await client.SendAsync(request, cancellationToken);
+        while (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            if (response.Headers.RetryAfter is not null && response.Headers.RetryAfter.Delta.HasValue)
+            {
+                await Task.Delay(response.Headers.RetryAfter.Delta.Value, cancellationToken);
+            }
+
+            var operationRequest = new HttpRequestMessage(HttpMethod.Get, response.Headers.Location);
+            operationRequest.Headers.Authorization = request.Headers.Authorization;
+            response = await client.SendAsync(operationRequest, cancellationToken);
+        }
+
+        return response;
     }
 
     private static Uri GetResourceUri(string path, string apiVersion)

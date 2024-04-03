@@ -1,23 +1,25 @@
 ﻿namespace Microsoft.Azure.GitOps;
 
-using Microsoft.Extensions.Logging;
-using Microsoft.Rest;
 using System.Net.Http;
+using global::Azure.Core;
+using Microsoft.Extensions.Logging;
 
 public class ArmResourceClientFactory
 {
     private readonly IHttpClientFactory httpClientFactory;
+    private readonly AzureEnvironment azureEnvironment;
     private readonly ILogger<ArmResourceClient> logger;
 
-    public ArmResourceClientFactory(IHttpClientFactory httpClientFactory, ILogger<ArmResourceClient> logger)
+    public ArmResourceClientFactory(IHttpClientFactory httpClientFactory, AzureEnvironment azureEnvironment, ILogger<ArmResourceClient> logger)
     {
         this.httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        this.azureEnvironment = azureEnvironment ?? throw new ArgumentNullException(nameof(azureEnvironment));
         this.logger = logger;
     }
 
-    public ArmResourceClient GetArmResourceClient<TType>(ServiceClientCredentials serviceClientCredentials)
+    public ArmResourceClient GetArmResourceClient<TType>(TokenCredential tokenCredential)
     {
         var client = this.httpClientFactory.CreateClient("ResourceProvider");
-        return new ArmResourceClient(client, serviceClientCredentials, this.logger);
+        return new ArmResourceClient(client, tokenCredential, this.azureEnvironment, this.logger);
     }
 }

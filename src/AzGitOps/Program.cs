@@ -4,15 +4,23 @@ using Microsoft.Azure.GitOps;
 
 Console.WriteLine("Azure GitOps Operator\n");
 
-Host
+var host = Host
     .CreateDefaultBuilder(args)
     .ConfigureServices(ConfigureServices)
-    .ConfigureWebJobs((context, b) =>
-    {
-        b.AddAzureStorageQueues();
-    })
-    .Build()
-    .Run();
+    .Build();
+
+var deploymentOperator = host.Services.GetRequiredService<DeploymentOperator>();
+await deploymentOperator.Reconcile("any");
+
+//Host
+//    .CreateDefaultBuilder(args)
+//    .ConfigureServices(ConfigureServices)
+//    .ConfigureWebJobs((context, b) =>
+//    {
+//        b.AddAzureStorageQueues();
+//    })
+//    .Build()
+//    .Run();
 
 static void ConfigureServices(HostBuilderContext hostBuilderContext, IServiceCollection services)
 {
@@ -22,16 +30,17 @@ static void ConfigureServices(HostBuilderContext hostBuilderContext, IServiceCol
         {
             var o = p.GetRequiredService<DefaultAzureCredentialOptions>();
             return new DefaultAzureCredential(o);
-        })
-        .AddSingleton(hostBuilderContext.Configuration.Get<OperatorOptions>() ?? new OperatorOptions())
-        .AddSingleton<DeploymentOperator>()
-        .AddSingleton<TemplateRetriever>()
-        .AddSingleton<ArmResourceClientFactory>();
+        });
 
+    services.AddSingleton(hostBuilderContext.Configuration.Get<OperatorOptions>() ?? new OperatorOptions());
+    services.AddSingleton<DeploymentOperator>();
+    services.AddSingleton<ArmResourceClientFactory>();
+    services.AddSingleton(s =>
+        AzureEnvironment.FromName(s.GetRequiredService<OperatorOptions>().AzureEnvironment) ?? AzureEnvironment.AzureGlobalCloud);
 
-    services.AddHttpClient("ResourceProvider", (s, h) =>
+    services.AddHttpClient("ResourceProvider", (s, httpClient) =>
     {
-        var o = s.GetRequiredService<OperatorOptions>();
-        h.BaseAddress = o.ResourceProviderEndpoint;
+        var options = s.GetRequiredService<OperatorOptions>();
+        httpClient.BaseAddress = options.ResourceProviderEndpoint;
     });
 }
